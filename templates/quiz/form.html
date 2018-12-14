@@ -1,0 +1,64 @@
+{{ define "quiz/form" }}
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="/static/css/reset.css">
+  <link rel="stylesheet" href="/static/css/common.css">
+  <link rel="stylesheet" href="/static/css/quiz/form.css">
+  <link rel="icon" href="/static/images/gopher_logo.png">
+  <script defer src="/static/js/quiz/form.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="user-info clearfix">
+      <div class="hello">Hello</div>
+      <div class="avatar"><img src="{{ .User.AvatarURL }}"></div>
+      <div class="name">{{ .User.Name}} </div>
+    </div>
+
+    <div class="quiz">
+      <div class="description">
+        <div class="title">問題文</div>
+        <textarea id="quiz-description" cols="100" rows="30" class="textarea" placeholder="you can use syntax highlight like that&#10;&#10;```go&#10;func Hello() string {&#10;    return 	&quot;hello&quot;&#10;}&#10;```"></textarea>
+      </div>
+
+      <div class="options">
+        <div class="explanation">正解の選択肢にチェックをつけてください</div>
+        <fieldset>
+          <div id="option-one" class="option">
+            <input class="option-radio" type="radio" name="option-is-answer" value="0" checked id="option-one-radio">
+            <input class="option-description" type="text" placeholder="選択肢1" name="option-one-description" id="option-one-description">
+          </div>
+          <div id="option-two" class="option">
+            <input class="option-radio" type="radio" name="option-is-answer" value="1" id="option-two-radio">
+            <input class="option-description" type="text" placeholder="選択肢2" name="option-two-description" id="option-two-description">
+          </div>
+          <div id="option-three" class="option">
+            <input class="option-radio" type="radio" name="option-is-answer" value="2" id="option-three-radio">
+            <input class="option-description" type="text" placeholder="選択肢3" name="option-three-description" id="option-three-description">
+          </div>
+          <div id="option-four" class="option">
+            <input class="option-radio" type="radio" name="option-is-answer" value="3" id="option-four-radio">
+            <input class="option-description" type="text" placeholder="選択肢4" name="option-four-description" id="option-four-description">
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="answer-description">
+        <div class="explanation">正解についての簡単な解説</div>
+        <input class="answer-description" type="text" id="answer-description">
+      </div>
+
+      <div class="save">
+        <button type="button" id="save-btn">Save</button>
+      </div>
+
+    </div>
+  </div>
+</body>
+
+</html>
+{{ end }}

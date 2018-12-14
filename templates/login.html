@@ -1,0 +1,14 @@
+{{ define "login" }}
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+</head>
+
+<body>
+  <a href="{{ .OAuth2.Github.AuthorizeURL }}?client_id={{ .OAuth2.Github.ClientID }}&redirect_uri={{ .OAuth2.Github.CallbackURL }}&state={{ .Next }}">Login
+    With Github</a>
+</body>
+
+</html>
+{{ end }}

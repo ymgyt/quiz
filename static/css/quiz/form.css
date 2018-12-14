@@ -1,0 +1,42 @@
+.container {
+    width: 1000px;
+    margin: 50px auto;
+    background-color: #eee;
+}
+
+.user-info {
+    width: 500px;
+    background-color: #ccc;
+}
+
+.user-info .hello {
+    float: left;
+    height: 100px;
+    line-height: 100px;
+    margin-right: 30px;
+}
+
+.user-info .avatar {
+    width: 100px;
+    height: 100px;
+    float: left;
+    margin-right: 30px;
+}
+
+.user-info .avatar img {
+    border-radius: 10px;
+    width: 100px;
+    height: 100px;
+}
+
+.user-info .name {
+    float: left;
+    height: 100px;
+    line-height: 100px;
+}
+
+.quiz {
+    width: 800px;
+    background-color: #ddd;
+    margin-top: 50px;
+}
