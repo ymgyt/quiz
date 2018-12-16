@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/julienschmidt/httprouter"
@@ -23,11 +24,23 @@ type Authorizer struct {
 
 // ServeHTTP is used to be middleware
 func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	dst := r.URL.Path
 	token, found := services.GetIDToken(r.Context())
 	if !found {
-		// redirect to login page
-		w.Header().Set("Location", "/login?next="+r.URL.Path)
+		// 最初は/loginにredirectさせていたが、直接githubに飛ばしたほうがよいと考えた
+		q := url.Values{}
+		q.Set("client_id", a.oauth2Config.Github.ClientID)
+		q.Set("redirect_uri", a.oauth2Config.Github.CallbackURL)
+		q.Set("state", dst)
+		location := fmt.Sprintf("%s?%s", a.oauth2Config.Github.AuthorizeURL, q.Encode())
+		fmt.Println("redirect to ", location)
+
+		w.Header().Set("Location", location)
 		w.WriteHeader(http.StatusFound)
+
+		// redirect to login page
+		// w.Header().Set("Location", "/login?next="+r.URL.Path)
+		// w.WriteHeader(http.StatusFound)
 		return
 	}
 

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gorilla/websocket"
+
 	"cloud.google.com/go/datastore"
 	"github.com/julienschmidt/httprouter"
 	"github.com/urfave/negroni"
@@ -68,6 +70,29 @@ func router(ctx context.Context) http.Handler {
 	r.Handler("GET", "/quiz/:id", withAuthorize(qh.RenderQuizForm))
 	r.Handler("POST", "/api/v1/quiz/new", withAuthorize(qh.Create))
 	r.Handler("GET", "/api/v1/quiz/:id", withAuthorize(qh.Get))
+
+	mg := &MatchGroup{
+		upgrader: websocket.Upgrader{
+			ReadBufferSize: 1024, WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool { return true },
+		},
+		logger: logger,
+		ts:     ts,
+		qh:     qh,
+	}
+	mg.Init() // 本当はapi callするところ
+	r.Handler("GET", "/match/:id", withAuthorize(mg.RenderMatch))
+	r.POST("/api/v1/match/:id/start", mg.StartMatch)
+	r.Handler("POST", "/api/v1/match/:id/submission", withAuthorize(mg.HandleSubmit))
+
+	// httprouterがhttp.Hijackerを実装していないので、websocketは直接うける
+	go func() {
+		n := negroni.New(jwtMW, authorizer)
+		n.UseHandler(mg)
+		if err := http.ListenAndServe(":9002", n); err != nil {
+			logger.Error("ws", zap.Error(err))
+		}
+	}()
 
 	common := negroni.New(middlewares.MustLogging(&middlewares.LoggingConfig{
 		Logger:  logger,

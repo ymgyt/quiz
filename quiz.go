@@ -1,17 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"math/rand"
 	"net/http"
+	"strings"
 
 	"cloud.google.com/go/datastore"
-	"github.com/davecgh/go-spew/spew"
+	"github.com/PuerkitoBio/goquery"
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/julienschmidt/httprouter"
+	bf "github.com/russross/blackfriday"
+	"github.com/sourcegraph/syntaxhighlight"
 	"github.com/ymgyt/appkit/handlers"
 	"github.com/ymgyt/appkit/services"
 	"go.uber.org/zap"
+	"google.golang.org/api/iterator"
 )
 
 // QuizHandler -
@@ -43,10 +49,10 @@ func (qh *QuizHandler) RenderQuizForm(w http.ResponseWriter, r *http.Request, pa
 type Quiz struct {
 	ID                string `json:"id"`
 	User              *User
-	DescriptionMD     string    `json:"description_md"`
-	DescriptionHTML   string    `json:"description_html"`
+	DescriptionMD     string    `json:"description_md" datastore:",noindex"`
+	DescriptionHTML   string    `json:"description_html" datastore:",noindex"`
 	Options           []*Option `json:"options"`
-	AnswerDescription string    `json:"answer_description"`
+	AnswerDescription string    `json:"answer_description" datastore:",noindex"`
 }
 
 // Option -
@@ -73,11 +79,17 @@ func (qh *QuizHandler) Create(w http.ResponseWriter, r *http.Request, _ httprout
 	}
 	quiz.User = user
 
-	// TODO どこかでhtmlへの変換いれる必要あり
+	// markdownをhtmlに変換してsyntaxhighlightかける
+	converter := &Markdown{}
+	htm := converter.ConvertHTML([]byte(quiz.DescriptionMD))
+	syntaxed, err := SyntaxHighlight(htm)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	quiz.DescriptionHTML = string(syntaxed)
 
 	quiz, err = qh.PutToStorage(r.Context(), quiz)
-
-	spew.Dump("save quiz", quiz)
 	(&apiResponse{Data: quiz, Err: err}).write(w)
 }
 
@@ -151,4 +163,80 @@ func (qh *QuizHandler) FetchFromStorage(ctx context.Context, encodedID string) (
 	}
 	var quiz Quiz
 	return &quiz, qh.datastore.Get(ctx, k, &quiz)
+}
+
+// PickupInput -
+type PickupInput struct {
+	Max int
+}
+
+// PickupFromStorage -
+// 全部とって、randomで返す. 複数取得とpickupする処理はわけたほうがよかった.
+func (qh *QuizHandler) PickupFromStorage(ctx context.Context, input *PickupInput) ([]*Quiz, error) {
+	q := datastore.NewQuery(quizKind)
+	itr := qh.datastore.Run(ctx, q)
+
+	var quizzes = make([]*Quiz, 0, input.Max) // たりないかもしれないので
+	for {
+		var quiz Quiz
+		k, err := itr.Next(&quiz)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		quiz.ID = k.Encode()
+		quizzes = append(quizzes, &quiz) // このaddressing 大丈夫?
+	}
+
+	return qh.pickup(quizzes, input.Max)
+}
+
+func (qh *QuizHandler) pickup(quizzes []*Quiz, n int) ([]*Quiz, error) {
+	rand.Shuffle(len(quizzes), func(i, j int) {
+		quizzes[i], quizzes[j] = quizzes[j], quizzes[i]
+	})
+
+	if len(quizzes) < n {
+		n = len(quizzes)
+	}
+	return quizzes[:n], nil
+}
+
+// Markdown is markdown processor
+type Markdown struct{}
+
+// ConvertHTML -
+func (m *Markdown) ConvertHTML(md []byte) []byte {
+	return bf.Run(md)
+}
+
+// SyntaxHighlight replace code literal.
+// https://zupzup.org/go-markdown-syntax-highlight/
+func SyntaxHighlight(htm []byte) ([]byte, error) {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(htm))
+	if err != nil {
+		return nil, err
+	}
+
+	var parseErrs []error
+	doc.Find("code[class*=\"language-\"]").Each(func(i int, s *goquery.Selection) {
+		oldCode := s.Text()
+		formatted, err := syntaxhighlight.AsHTML([]byte(oldCode))
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+			return
+		}
+		s.SetHtml(string(formatted))
+	})
+
+	// replace unnecessarily added html tags
+	new, err := doc.Html()
+	if err != nil {
+		return nil, err
+	}
+	new = strings.Replace(new, "<html><head></head><body>", "", 1)
+	new = strings.Replace(new, "</body></html>", "", 1)
+	return []byte(new), nil
 }
