@@ -30,16 +30,15 @@ class Match {
     }
     // submit buttonも毎回serverからinjectされるので、eventの設定が必要
     handleSubmit() {
-        // renderingの関係でとれない場合がある
-        setTimeout(()=> {
-            const submitBtn = document.getElementById('quiz-submit-btn')
+        const submitBtn = document.getElementById('quiz-submit-btn')
+        if (submitBtn) {
             submitBtn.addEventListener('click', this.onsubmit)
-        }, 1000)
+        }
     }
 
     updateState(state) {
-        this.updateUserState(state.users_table)
-        this.updateQuiz(state.quiz_div)
+        this.updateUserState(state.users_view)
+        this.updateQuiz(state.quiz_view)
         this.quizIdx = state.quiz_idx
         this.handleSubmit()
     }

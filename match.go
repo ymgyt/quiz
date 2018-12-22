@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -95,6 +96,18 @@ func (mg *MatchGroup) StartMatch(w http.ResponseWriter, r *http.Request, params 
 	w.WriteHeader(http.StatusOK)
 }
 
+// NextQuiz -
+func (mg *MatchGroup) NextQuiz(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	id := params.ByName("id")
+	m, found := mg.m[id]
+	if !found {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	m.nextQuiz()
+	w.WriteHeader(http.StatusOK)
+}
+
 type submission struct {
 	QuizIdx   int `json:"quiz_idx"`
 	OptionIdx int `json:"option_idx"` // 選択肢1がidx 0に注意
@@ -132,19 +145,21 @@ func newMatch(cfg *MatchConfig, name string, qh *QuizHandler, logger *zap.Logger
 	if err != nil {
 		panic(err)
 	}
+	answerVisibilities := make([]bool, len(quizzes))
 
 	return &Match{
-		qh:          qh,
-		logger:      logger.With(zap.String("name", name)),
-		register:    make(chan *Client),
-		unregister:  make(chan *Client),
-		answer:      make(chan []byte),
-		clients:     make(map[*Client]bool),
-		contexts:    make(map[string]*Context),
-		status:      initializing,
-		config:      cfg,
-		quizzes:     quizzes,
-		currentQuiz: -1,
+		qh:                      qh,
+		logger:                  logger.With(zap.String("name", name)),
+		register:                make(chan *Client),
+		unregister:              make(chan *Client),
+		answer:                  make(chan []byte),
+		clients:                 make(map[*Client]bool),
+		contexts:                make(map[string]*Context),
+		status:                  initializing,
+		config:                  cfg,
+		quizzes:                 quizzes,
+		quizeAnswerVisibilities: answerVisibilities,
+		currentQuiz:             -1, // nextQuiz呼んではじめられるように
 	}
 }
 
@@ -161,15 +176,16 @@ const (
 
 // QuizResult -
 type QuizResult struct {
-	NotYet    bool // まだ回答されていない
-	QuizIdx   int
-	OptionIdx int
-	Correct   bool
+	OptionSubmitted       bool // userから回答の投稿があったかどうか
+	QuizIdx               int
+	OptionIdx             int
+	Correct               bool
+	UserCanGetTheirResult *bool // quizに正解したかどうかuserにわかるようにしてよいか
 }
 
 // Context -
 type Context struct {
-	Results []*QuizResult
+	Results []QuizResult
 }
 
 // MatchConfig -
@@ -194,15 +210,16 @@ type Match struct {
 
 	status string
 	// quiz関連
-	quizzes     []*Quiz
-	currentQuiz int
+	quizzes                 []*Quiz
+	quizeAnswerVisibilities []bool // 各quizの正解の可視性
+	currentQuiz             int
 }
 
 // Start -
 func (m *Match) Start() {
 	m.status = starting
 	m.logger.Info("match start")
-	m.currentQuiz++
+	m.nextQuiz()
 	m.updateState()
 }
 
@@ -210,8 +227,7 @@ func (m *Match) run() {
 	for {
 		select {
 		case client := <-m.register:
-			m.logger.Info("register", zap.String("user", client.user.Name))
-			m.clients[client] = true
+			m.registerClient(client)
 		case client := <-m.unregister:
 			if _, ok := m.clients[client]; ok {
 				m.logger.Info("unregister", zap.String("user", client.user.Name))
@@ -234,17 +250,42 @@ func (m *Match) run() {
 	}
 }
 
+func (m *Match) registerClient(client *Client) {
+	m.logger.Info("register", zap.String("user", client.user.Name))
+	m.clients[client] = true
+
+	// contextの初期化処理
+	user := client.user
+	ctx, found := m.contexts[user.Name]
+	if !found {
+		ctx = &Context{Results: make([]QuizResult, len(m.quizzes))}
+		m.contexts[user.Name] = ctx
+	}
+}
+
+func (m *Match) nextQuiz() {
+	// 現時点までに出題したquizの答えを発表
+	for i := 0; i <= m.currentQuiz; i++ {
+		m.quizeAnswerVisibilities[i] = true
+	}
+	m.currentQuiz++
+	if m.currentQuiz >= len(m.quizzes) {
+		m.currentQuiz = len(m.quizzes) - 1
+	}
+	m.updateState()
+}
+
 func (m *Match) handleSubmission(user *User, submission *submission) {
 	m.logger.Info("submission", zap.String("user", user.Name), zap.Int("quiz", submission.QuizIdx), zap.Int("option", submission.OptionIdx))
 	// 未選択状態でsubmitするとindexが-1なので握りつぶす
 	if submission.OptionIdx == -1 {
+		m.logger.Warn("submission", zap.Int("invalid option index", submission.OptionIdx))
 		return
 	}
-
 	c, found := m.contexts[user.Name]
 	if !found {
-		c = &Context{Results: make([]*QuizResult, len(m.quizzes))}
-		m.contexts[user.Name] = c
+		m.logger.Warn("submission", zap.String("user not found", user.Name))
+		return
 	}
 
 	if len(c.Results) <= submission.QuizIdx {
@@ -252,14 +293,11 @@ func (m *Match) handleSubmission(user *User, submission *submission) {
 		return
 	}
 	r := c.Results[submission.QuizIdx]
-	if r == nil {
-		r = &QuizResult{}
-	}
+	r.OptionSubmitted = true
 	r.QuizIdx = submission.QuizIdx
 	r.OptionIdx = submission.OptionIdx
-	r.NotYet = false
 	r.Correct = m.isCorrect(submission.QuizIdx, submission.OptionIdx)
-
+	r.UserCanGetTheirResult = &(m.quizeAnswerVisibilities[submission.QuizIdx])
 	c.Results[submission.QuizIdx] = r
 
 	m.updateState()
@@ -277,9 +315,11 @@ func (m *Match) isCorrect(quizIdx, optionIdx int) bool {
 
 func (m *Match) updateState() {
 	state := m.state()
+	encoded := state.encode()
 	for client := range m.clients {
+		fmt.Println("send", client.user.Name)
 		select {
-		case client.send <- state.encode():
+		case client.send <- encoded:
 		default:
 			m.logger.Warn("send state fail", zap.String("client", client.user.Name))
 			close(client.send)
@@ -299,12 +339,15 @@ func (m *Match) state() *State {
 	}
 
 	s := &State{
-		Users:   users,
-		Quiz:    quiz,
-		QuizIdx: m.currentQuiz,
-		Config:  m.config,
-		match:   m,
+		Users:    users,
+		Quiz:     quiz,
+		QuizIdx:  m.currentQuiz,
+		Contexts: m.contexts,
+
+		Config: m.config,
 	}
+	// spew.Dump(s)
+	s.match = m
 
 	return s
 }
@@ -335,7 +378,7 @@ type msg struct {
 
 func (c *Client) read() {
 	defer func() {
-		c.logger.Debug(c.user.Name, zap.String("msg", "read defer"))
+		// c.logger.Debug(c.user.Name, zap.String("msg", "read defer"))
 		c.match.unregister <- c
 		c.conn.Close()
 	}()
@@ -388,7 +431,7 @@ func (c *Client) write() {
 				c.logger.Error("client", zap.Error(err))
 				return
 			}
-			c.logger.Debug(c.user.Name, zap.String("write_message", string(message)))
+			// c.logger.Debug(c.user.Name, zap.String("write_message", string(message)))
 			w.Write(message)
 
 			// sampleだとここでさらにc.sendからreadして書き込みをおこなっている

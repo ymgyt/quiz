@@ -83,6 +83,7 @@ func router(ctx context.Context) http.Handler {
 	mg.Init() // 本当はapi callするところ
 	r.Handler("GET", "/match/:id", withAuthorize(mg.RenderMatch))
 	r.POST("/api/v1/match/:id/start", mg.StartMatch)
+	r.POST("/api/v1/match/:id/next", mg.NextQuiz)
 	r.Handler("POST", "/api/v1/match/:id/submission", withAuthorize(mg.HandleSubmit))
 
 	// httprouterがhttp.Hijackerを実装していないので、websocketは直接うける
