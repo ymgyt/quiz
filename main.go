@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gorilla/websocket"
 
 	"cloud.google.com/go/datastore"
@@ -68,7 +69,7 @@ func router(ctx context.Context) http.Handler {
 
 	qh := &QuizHandler{logger: logger, ts: ts, datastore: datastoreClient(ctx)}
 	r.Handler("GET", "/quiz/:id", withAuthorize(qh.RenderQuizForm))
-	r.Handler("POST", "/api/v1/quiz/new", withAuthorize(qh.Create))
+	r.Handler("POST", "/api/v1/quiz/:id", withAuthorize(qh.Save))
 	r.Handler("GET", "/api/v1/quiz/:id", withAuthorize(qh.Get))
 
 	mg := &MatchGroup{
@@ -80,8 +81,9 @@ func router(ctx context.Context) http.Handler {
 		ts:     ts,
 		qh:     qh,
 	}
-	mg.Init() // 本当はapi callするところ
+	// mg.Init() // 本当はapi callするところ
 	r.Handler("GET", "/match/:id", withAuthorize(mg.RenderMatch))
+	r.POST("/api/v1/match", mg.CreateMatch)
 	r.POST("/api/v1/match/:id/start", mg.StartMatch)
 	r.POST("/api/v1/match/:id/next", mg.NextQuiz)
 	r.Handler("POST", "/api/v1/match/:id/submission", withAuthorize(mg.HandleSubmit))
@@ -112,9 +114,12 @@ func main() {
 		Level: "debug",
 	})
 
+	// k8sでの設定に不安があるので、debug
+	spew.Dump("envs", os.Environ())
+
 	s := server.Must(&server.Config{
 		Addr:            ":" + port,
-		DisableHTTPS:    true,
+		DisableHTTPS:    mode == "development",
 		Handler:         router(ctx),
 		DatastoreClient: datastoreClient(ctx),
 	})

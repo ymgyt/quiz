@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	ttemplate "text/template"
 
 	"github.com/davecgh/go-spew/spew"
@@ -107,6 +108,10 @@ func (v *StateView) quiz() string {
 }
 
 func (v *StateView) encode() []byte {
+	// userの一覧が並び替わると嫌なのでsortしておく
+	sort.Slice(v.Users, func(i, j int) bool {
+		return v.Users[i].Name < v.Users[j].Name
+	})
 
 	v.QuizView = v.quiz()
 	v.UsersView = v.users()

@@ -1,0 +1,42 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: quiz-deployment
+  labels:
+    app: quiz
+spec:
+  progressDeadlineSeconds: 10
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quiz
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 2
+  template:
+    metadata:
+      name: quiz
+      labels:
+        app: quiz
+    spec:
+      containers:
+        - name: quiz-container
+          image: docker.io/ymgyt/quiz:latest
+          imagePullPolicy: Always
+          ports:
+            - name: https
+              protocol: TCP
+              containerPort: 443
+            - name: http
+              protocol: TCP
+              containerPort: 80
+            - name: ws
+              protocol: TCP
+              containerPort:  9002
+          envFrom:
+            - configMapRef:
+                name: quiz-configmap
+                optional: false
+          resources:
+            limits:
+              memory: "200Mi"

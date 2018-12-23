@@ -64,13 +64,18 @@ type Option struct {
 
 // api
 
-// Create -
-func (qh *QuizHandler) Create(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+// Save -
+func (qh *QuizHandler) Save(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
 	quiz, err := qh.readQuiz(r)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, &apiResponse{Err: err})
 		return
 	}
+	encodedID := params.ByName("id")
+	if encodedID == "new" {
+		encodedID = ""
+	}
+	quiz.ID = encodedID
 
 	user, found := UserFromReq(r)
 	if !found {
@@ -141,10 +146,14 @@ const (
 // PutToStorage -
 func (qh *QuizHandler) PutToStorage(ctx context.Context, quiz *Quiz) (*Quiz, error) {
 	var k *datastore.Key
+	var err error
 	if quiz.ID == "" {
 		k = datastore.IncompleteKey(quizKind, nil)
 	} else {
-		k = datastore.NameKey(quizKind, quiz.ID, nil)
+		k, err = datastore.DecodeKey(quiz.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	nk, err := qh.datastore.Put(ctx, k, quiz)
 	if err != nil {
@@ -162,7 +171,11 @@ func (qh *QuizHandler) FetchFromStorage(ctx context.Context, encodedID string) (
 		return nil, err
 	}
 	var quiz Quiz
-	return &quiz, qh.datastore.Get(ctx, k, &quiz)
+	if err = qh.datastore.Get(ctx, k, &quiz); err != nil {
+		return nil, err
+	}
+	quiz.ID = encodedID
+	return &quiz, nil
 }
 
 // PickupInput -

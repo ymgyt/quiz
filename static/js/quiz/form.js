@@ -19,6 +19,7 @@ class QuizForm {
         this.dom.answerDescription = document.getElementById('answer-description')
 
         this.id_token = query('id_token')
+        this.isNew = false
         this.save = this.save.bind(this)
 
         // add event
@@ -55,7 +56,13 @@ class QuizForm {
     save(){
         const quiz = this.quiz()
         console.log("save quiz", quiz)
-        fetch(this.cfg.endpoints.save_quiz, {
+        let ep = this.cfg.endpoints.save_quiz
+        if (this.isNew) {
+            ep = ep + "new"
+        } else {
+            ep = ep + this.quizID
+        }
+        fetch(ep, {
             method: "POST",
             headers: this.headers(),
             body: JSON.stringify(quiz),
@@ -94,6 +101,7 @@ class QuizForm {
             radio.checked = opt.is_answer
         }
         this.dom.answerDescription.value  = q.answer_description
+        this.quizID = q.id
     }
 
     headers() {
@@ -112,7 +120,7 @@ let gQuiz
 const init = () => {
     const cfg = {
         "endpoints": {
-            "save_quiz": "/api/v1/quiz/new",
+            "save_quiz": "/api/v1/quiz/",
             "render_quiz": "/quiz/",
             "api_prefix": "/api/v1/",
         },
@@ -125,6 +133,8 @@ const init = () => {
 
     if (!window.location.pathname.endsWith('new')) {
         quiz.populate()
+    } else {
+        quiz.isNew = true
     }
 
     // for debug

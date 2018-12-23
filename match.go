@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gorilla/websocket"
 	"github.com/julienschmidt/httprouter"
 	"github.com/ymgyt/appkit/handlers"
 	"go.uber.org/zap"
 )
 
+/*
 // Init -
 func (mg *MatchGroup) Init() {
 	mg.m = make(map[string]*Match)
@@ -30,6 +31,33 @@ func (mg *MatchGroup) Init() {
 	mg.m["100"] = match
 	go mg.m["100"].run()
 }
+*/
+
+func (mg *MatchGroup) CreateMatch(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	if mg.m == nil {
+		mg.m = make(map[string]*Match)
+	}
+	mg.counter++
+
+	rawQuizNum := r.URL.Query().Get("quiz")
+	if rawQuizNum == "" {
+		rawQuizNum = "5"
+	}
+	quizNum, err := strconv.Atoi(rawQuizNum)
+	if err != nil {
+		quizNum = 5
+	}
+
+	id := strconv.Itoa(mg.counter)
+	match := newMatch(&MatchConfig{
+		QuizNum: quizNum,
+	}, id, mg.qh, mg.logger)
+	mg.m[id] = match
+	go match.run()
+
+	w.Write([]byte(id))
+	w.WriteHeader(http.StatusOK)
+}
 
 // MatchGroup -
 type MatchGroup struct {
@@ -38,6 +66,7 @@ type MatchGroup struct {
 	logger   *zap.Logger
 	m        map[string]*Match
 	qh       *QuizHandler
+	counter  int // matchのidに利用する
 }
 
 // RenderMatch -
@@ -402,7 +431,6 @@ func (c *Client) read() {
 		if err := json.Unmarshal(message, &msg); err != nil {
 			panic(err)
 		}
-		spew.Dump(msg)
 
 		c.match.answer <- message
 	}
